@@ -7,12 +7,15 @@ module Control.Monad.Aff.Retry
   , applyPolicy
   , retryPolicy
   , limitRetries
+  , limitRetriesByDelay
+  , limitRetriesByCumulativeDelay
   , retrying
   , recovering
   ) where
 
 import Prelude
 
+import Control.Bind (bindFlipped)
 import Control.Monad.Aff (delay, throwError, try)
 import Control.Monad.Aff.Class (class MonadAff, liftAff)
 import Control.Monad.Eff.Exception (Error)
@@ -95,6 +98,32 @@ limitRetries
   -> RetryPolicy
 limitRetries i = retryPolicy $ \(RetryStatus { iterNumber: n }) ->
   if n >= i then Nothing else Just zero
+
+-- | Add an upperbound to a policy such that once the given time-delay
+-- amount *per try* has been reached or exceeded, the policy will stop
+-- retrying and fail. If you need to stop retrying once *cumulative*
+-- delay reaches a time-delay amount, use
+-- 'limitRetriesByCumulativeDelay'
+limitRetriesByDelay
+  :: ∀ d m . Monad m => Duration d => d -> RetryPolicyM m -> RetryPolicyM m
+limitRetriesByDelay d (RetryPolicyM policy) =
+  RetryPolicyM \status -> bindFlipped limit <$> policy status
+  where limit delay = if delay >= fromDuration d
+                      then Nothing
+                      else Just delay
+
+-- | Add an upperbound to a policy such that once the cumulative delay
+-- over all retries has reached or exceeded the given limit, the
+-- policy will stop retrying and fail.
+limitRetriesByCumulativeDelay
+  :: ∀ d m . Monad m => Duration d => d -> RetryPolicyM m -> RetryPolicyM m
+limitRetriesByCumulativeDelay d (RetryPolicyM policy) =
+  RetryPolicyM \status -> bindFlipped (limit status) <$> policy status
+  where
+    limit (RetryStatus rs) curDelay
+      | rs.cumulativeDelay + curDelay > cumulativeDelay = Nothing
+      | otherwise = Just curDelay
+    cumulativeDelay = fromDuration d
 
 -- | Cconstant delay with unlimited retries
 constantDelay :: ∀ d . Duration d => d -> RetryPolicy
