@@ -9,5 +9,7 @@
     , "prelude"
     , "datetime"
     , "transformers"
+    , "exceptions"
+    , "test-unit"
     ]
 }

@@ -1,25 +1,32 @@
 module Control.Monad.Aff.Retry
   ( RetryStatus(..)
-  , RetryPolicyM
+  , RetryPolicyM(..)
+  , RetryPolicy
   , constantDelay
   , defaultRetryStatus
+  , applyPolicy
   , retryPolicy
   , limitRetries
   , retrying
+  , recovering
   ) where
 
 import Prelude
 
-import Control.Monad.Aff (delay)
+import Control.Monad.Aff (delay, throwError, try)
 import Control.Monad.Aff.Class (class MonadAff, liftAff)
-import Control.Monad.Aff.Console (CONSOLE, log)
+import Control.Monad.Eff.Exception (Error)
+import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Maybe.Trans (MaybeT(..), runMaybeT)
-import Data.Maybe (Maybe(..))
+import Data.Array (uncons)
+import Data.Either (either)
+import Data.Maybe (Maybe(Nothing, Just), maybe)
 import Data.Monoid (class Monoid)
-import Data.Time.Duration (Milliseconds(..))
+import Data.Newtype (class Newtype)
+import Data.Time.Duration (class Duration, Milliseconds(..), fromDuration)
 
 -- | Datatype with stats about retries made thus far
-data RetryStatus =
+newtype RetryStatus =
   RetryStatus
   { iterNumber      :: Int
   -- ^ Iteration number, where 0 is the first try
@@ -37,6 +44,7 @@ instance showRetryStatus :: Show RetryStatus where
     <> "previousDelay: "   <> show s.previousDelay   <> "}"
 
 derive instance eqRetryStatus :: Eq RetryStatus
+derive instance newtypeRetryStatus :: Newtype RetryStatus _
 
 -- | A 'RetryPolicyM' is a function that takes an 'RetryStatus' and
 -- possibly returns a delay in milliseconds. Iteration numbers start
@@ -68,14 +76,13 @@ derive instance eqRetryStatus :: Eq RetryStatus
 newtype RetryPolicyM m
   = RetryPolicyM (RetryStatus -> m (Maybe Milliseconds))
 
-type RetryPolicy = ∀ m . Monad m => RetryPolicyM m
+type RetryPolicy = ∀ f m . MonadAff f m => RetryPolicyM m
 
 instance retryPolicySemigroup :: Monad m => Semigroup (RetryPolicyM m) where
   append (RetryPolicyM a) (RetryPolicyM b) =
     RetryPolicyM $ \n -> runMaybeT $ max <$> MaybeT (a n) <*> MaybeT (b n)
-    -- ^todo: remove transformers?
 
-instance retryPolicyMonoid :: Monad m => Monoid (RetryPolicyM m) where
+instance retryPolicyMonoid :: MonadAff f m => Monoid (RetryPolicyM m) where
     mempty = retryPolicy $ const $ Just $ Milliseconds zero
 
 -- | Helper for making simplified policies that don't use the monadic context.
@@ -84,15 +91,14 @@ retryPolicy f = RetryPolicyM (pure <<< f)
 
 -- | Retry immediately, but only up to @n@ times.
 limitRetries
-  :: Int
-  -- ^ Maximum number of retries.
+  :: Int -- Maximum number of retries.
   -> RetryPolicy
 limitRetries i = retryPolicy $ \(RetryStatus { iterNumber: n }) ->
-  if n >= i then Nothing else (Just zero)
+  if n >= i then Nothing else Just zero
 
 -- | Cconstant delay with unlimited retries
-constantDelay :: Milliseconds -> RetryPolicy
-constantDelay ms = retryPolicy (const (Just ms))
+constantDelay :: ∀ d . Duration d => d -> RetryPolicy
+constantDelay d = retryPolicy <<< const <<< pure <<< fromDuration $ d
 
 -- | Initial, default retry status. Exported mostly to allow user code
 -- to test their handlers and retry policies. Use fields or lenses to update.
@@ -114,69 +120,62 @@ applyPolicy (RetryPolicyM policy) retryStatus@(RetryStatus rs) = do
     res <- policy retryStatus
     case res of
       Just delay -> pure $ Just $ RetryStatus
-        { iterNumber: rs.iterNumber + 1
-        , cumulativeDelay: rs.cumulativeDelay + delay -- boundedPlus
+        { iterNumber: rs.iterNumber + one
+        , cumulativeDelay: rs.cumulativeDelay + delay -- boundedPlus?
         , previousDelay: Just delay
         }
       Nothing -> pure Nothing
 
 -- | Apply policy and delay by its amount if it results in a retry.
 -- Return updated status.
-applyAndDelay
-  :: ∀ fx m . MonadAff (console :: CONSOLE | fx) m
+applyAndDelay :: ∀ fx m . MonadAff fx m
   => RetryPolicyM m
   -> RetryStatus
   -> m (Maybe RetryStatus)
-applyAndDelay policy retryStatus@(RetryStatus rs) = do
-    chk <- applyPolicy policy retryStatus
-    case chk of
-      Just retryStatus'@(RetryStatus rs') -> do
-        case rs'.previousDelay of
-          Nothing -> pure unit
-          Just d -> do
-            liftAff $ log "Before delay"
-            liftAff $ delay d
-            liftAff $ log "After delay"
-        pure (Just retryStatus')
+applyAndDelay policy retryStatus = do
+    res <- applyPolicy policy retryStatus
+    case res of
+      Just nextRetryStatus@(RetryStatus { previousDelay: pd }) ->
+        maybe (pure unit) (delay >>> liftAff) pd
+          $> Just nextRetryStatus
       Nothing -> pure Nothing
 
 
 -- | Retry combinator for actions that don't raise exceptions, but
 -- signal in their type the outcome has failed. Examples are the
 -- 'Maybe', 'Either' and 'EitherT' monads.
---
--- Let's write a function that always fails and watch this combinator
--- retry it 5 additional times following the initial run:
---
--- >>> import Data.Maybe
--- >>> let f _ = putStrLn "Running action" >> return Nothing
--- >>> retrying def (const $ return . isNothing) f
--- Running action
--- Running action
--- Running action
--- Running action
--- Running action
--- Running action
--- Nothing
---
--- Note how the latest failing result is returned after all retries
--- have been exhausted.
-retrying  :: ∀ fx m b . MonadAff (console :: CONSOLE | fx) m
-          => RetryPolicyM m
-          -> (RetryStatus -> b -> m Boolean)
-          -- ^ An action to check whether the result should be retried.
-          -- If True, we delay and retry the operation.
-          -> (RetryStatus -> m b)
-          -- ^ Action to run
-          -> m b
-retrying policy chk f = go defaultRetryStatus
+retrying :: ∀ fx m b . MonadAff fx m
+  => RetryPolicyM m
+  -> (RetryStatus -> b -> m Boolean) -- An action to check whether the result should be retried.
+                                     -- If True, we delay and retry the operation.
+  -> (RetryStatus -> m b)            -- Action to run
+  -> m b
+retrying policy check action = go defaultRetryStatus
   where
-  go s = do
-    res <- f s
-    chk' <- chk s res
-    if chk' then do
-      rs <- applyAndDelay policy s
-      case rs of
-        Nothing -> pure res
-        Just rs' -> go rs'
-        else pure res
+  go status = do
+    res <- action status
+    ifM (check status res)
+      (applyAndDelay policy status >>= maybe (pure res) go)
+      (pure res)
+
+-- | Run an action and recover from a raised exception by potentially
+-- retrying the action a number of times.
+recovering :: ∀ fx m a b . MonadAff fx m
+  => MonadError Error m
+  => RetryPolicyM m
+  -> Array (RetryStatus -> Error -> m Boolean)
+  -- ^ Should a given exception be retried? Action will be
+  -- retried if this returns True *and* the policy allows it.
+  -- This action will be consulted first even if the policy
+  -- later blocks it.
+  -> (RetryStatus -> m a) -- Action to perform
+  -> m a
+recovering policy checks f = go defaultRetryStatus
+  where
+  go status = try (f status) >>= either (recover checks) pure
+    where
+    recover checks e = uncons checks # maybe (throwError e) (handle e)
+    handle e hs =
+      ifM (hs.head status e)
+        (applyAndDelay policy status >>= maybe (throwError e) go)
+        (recover hs.tail e)
