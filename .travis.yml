@@ -12,7 +12,7 @@ install:
   - npm install -g pulp psc-package
 script:
   - psc-package install
-  - pulp test
+  - pulp --psc-package test
 #after_success:
 #- >-
 # test $TRAVIS_TAG &&
