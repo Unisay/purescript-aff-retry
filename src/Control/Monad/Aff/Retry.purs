@@ -133,6 +133,17 @@ limitRetriesByCumulativeDelay d (RetryPolicyM policy) =
 constantDelay :: ∀ d . Duration d => d -> RetryPolicy
 constantDelay d = retryPolicy <<< const <<< pure <<< fromDuration $ d
 
+-- | Set a time-upperbound for any delays that may be directed by the
+-- given policy.  This function does not terminate the retrying. The policy
+-- `capDelay maxDelay (exponentialBackoff n)` will never stop retrying.  It
+-- will reach a state where it retries forever with a delay of `maxDelay`
+-- between each one. To get termination you need to use one of the
+-- 'limitRetries' function variants.
+capDelay
+  :: ∀ d m . Monad m => Duration d => d -> RetryPolicyM m -> RetryPolicyM m
+capDelay limit (RetryPolicyM policy) =
+  RetryPolicyM \status -> map (min (fromDuration limit)) <$> policy status
+
 -- | Grow delay exponentially each iteration.
 -- Each delay will increase by a factor of two.
 exponentialBackoff :: ∀ d . Duration d => d -> RetryPolicy
