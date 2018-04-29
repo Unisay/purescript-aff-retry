@@ -18,7 +18,9 @@ import Prelude
 import Control.Bind (bindFlipped)
 import Control.Monad.Aff (delay, throwError, try)
 import Control.Monad.Aff.Class (class MonadAff, liftAff)
+import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Exception (Error)
+import Control.Monad.Eff.Random (RANDOM, randomRange)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Maybe.Trans (MaybeT(..), runMaybeT)
 import Data.Array (uncons)
@@ -137,6 +139,22 @@ exponentialBackoff :: ∀ d . Duration d => d -> RetryPolicy
 exponentialBackoff base = retryPolicy \(RetryStatus { iterNumber: n }) ->
   Just $ Milliseconds $ unwrap (fromDuration base) * pow 2.0 (toNumber n)
 
+-- | FullJitter exponential backoff as explained in AWS Architecture Blog article.
+-- @http:\/\/www.awsarchitectureblog.com\/2015\/03\/backoff.html@
+-- temp = min(cap, base * 2 ** attempt)
+-- sleep = temp \/ 2 + random_between(0, temp \/ 2)
+fullJitterBackoff
+  :: ∀ fx m d
+   . MonadAff (random :: RANDOM | fx) m
+  => Duration d
+  => d
+  -> RetryPolicyM m
+fullJitterBackoff duration = RetryPolicyM \(RetryStatus { iterNumber: n }) -> do
+  let (Milliseconds ms) = fromDuration duration
+      d = (ms * pow 2.0 (toNumber n)) `div` 2.0
+  rand <- liftEff $ randomRange zero d
+  pure $ Just $ Milliseconds $ d + rand
+
 -- | Initial, default retry status. Exported mostly to allow user code
 -- to test their handlers and retry policies. Use fields or lenses to update.
 defaultRetryStatus :: RetryStatus
@@ -154,14 +172,14 @@ applyPolicy
   -> RetryStatus
   -> m (Maybe RetryStatus)
 applyPolicy (RetryPolicyM policy) retryStatus@(RetryStatus rs) = do
-    res <- policy retryStatus
-    case res of
-      Just delay -> pure $ Just $ RetryStatus
-        { iterNumber: rs.iterNumber + one
-        , cumulativeDelay: rs.cumulativeDelay + delay -- boundedPlus?
-        , previousDelay: Just delay
-        }
-      Nothing -> pure Nothing
+  res <- policy retryStatus
+  case res of
+    Just delay -> pure $ Just $ RetryStatus
+      { iterNumber: rs.iterNumber + one
+      , cumulativeDelay: rs.cumulativeDelay + delay -- boundedPlus?
+      , previousDelay: Just delay
+      }
+    Nothing -> pure Nothing
 
 -- | Apply policy and delay by its amount if it results in a retry.
 -- Return updated status.
