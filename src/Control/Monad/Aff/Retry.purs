@@ -23,10 +23,12 @@ import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Maybe.Trans (MaybeT(..), runMaybeT)
 import Data.Array (uncons)
 import Data.Either (either)
+import Data.Int (toNumber)
 import Data.Maybe (Maybe(Nothing, Just), maybe)
 import Data.Monoid (class Monoid)
-import Data.Newtype (class Newtype)
+import Data.Newtype (class Newtype, unwrap)
 import Data.Time.Duration (class Duration, Milliseconds(..), fromDuration)
+import Math (pow)
 
 -- | Datatype with stats about retries made thus far
 newtype RetryStatus =
@@ -128,6 +130,12 @@ limitRetriesByCumulativeDelay d (RetryPolicyM policy) =
 -- | Cconstant delay with unlimited retries
 constantDelay :: ∀ d . Duration d => d -> RetryPolicy
 constantDelay d = retryPolicy <<< const <<< pure <<< fromDuration $ d
+
+-- | Grow delay exponentially each iteration.
+-- Each delay will increase by a factor of two.
+exponentialBackoff :: ∀ d . Duration d => d -> RetryPolicy
+exponentialBackoff base = retryPolicy \(RetryStatus { iterNumber: n }) ->
+  Just $ Milliseconds $ unwrap (fromDuration base) * pow 2.0 (toNumber n)
 
 -- | Initial, default retry status. Exported mostly to allow user code
 -- to test their handlers and retry policies. Use fields or lenses to update.
