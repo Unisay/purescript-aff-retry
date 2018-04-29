@@ -1,0 +1,26 @@
+{
+  "name": "purescript-aff-retry",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "output"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/Unisay/purescript-aff-retry.git"
+  },
+  "dependencies": {
+    "purescript-aff": "^4.1.1",
+    "purescript-transformers": "^3.6.0",
+    "purescript-exceptions": "^3.1.0",
+    "purescript-random": "^3.0.0",
+    "purescript-datetime": "^3.4.1",
+    "purescript-prelude": "^3.2.0"
+  },
+  "devDependencies": {
+    "purescript-psci-support": "^3.0.0",
+    "purescript-test-unit": "^13.0.0"
+  }
+}
