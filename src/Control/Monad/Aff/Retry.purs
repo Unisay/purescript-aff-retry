@@ -139,6 +139,14 @@ exponentialBackoff :: ∀ d . Duration d => d -> RetryPolicy
 exponentialBackoff base = retryPolicy \(RetryStatus { iterNumber: n }) ->
   Just $ Milliseconds $ unwrap (fromDuration base) * pow 2.0 (toNumber n)
 
+fibonacciBackoff :: ∀ d . Duration d => d -> RetryPolicy
+fibonacciBackoff duration = retryPolicy \(RetryStatus { iterNumber: n }) ->
+  Just $ Milliseconds $ fib ((toNumber n) + one) { a: zero, b: base }
+    where
+      (Milliseconds base) = fromDuration duration
+      fib 0.0 { a, b } = a
+      fib m   { a, b } = fib (m - one) { a: b, b: a + b }
+
 -- | FullJitter exponential backoff as explained in AWS Architecture Blog article.
 -- @http:\/\/www.awsarchitectureblog.com\/2015\/03\/backoff.html@
 -- temp = min(cap, base * 2 ** attempt)
