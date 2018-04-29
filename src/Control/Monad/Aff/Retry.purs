@@ -234,7 +234,7 @@ retrying policy check action = go defaultRetryStatus
 
 -- | Run an action and recover from a raised exception by potentially
 -- retrying the action a number of times.
-recovering :: ∀ fx m a b . MonadAff fx m
+recovering :: ∀ fx m a . MonadAff fx m
   => MonadError Error m
   => RetryPolicyM m
   -> Array (RetryStatus -> Error -> m Boolean)
@@ -248,7 +248,7 @@ recovering policy checks f = go defaultRetryStatus
   where
   go status = try (f status) >>= either (recover checks) pure
     where
-    recover checks e = uncons checks # maybe (throwError e) (handle e)
+    recover chks e = uncons chks # maybe (throwError e) (handle e)
     handle e hs =
       ifM (hs.head status e)
         (applyAndDelay policy status >>= maybe (throwError e) go)
