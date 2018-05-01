@@ -54,31 +54,31 @@ derive instance eqRetryStatus :: Eq RetryStatus
 derive instance newtypeRetryStatus :: Newtype RetryStatus _
 
 -- | A 'RetryPolicyM' is a function that takes an 'RetryStatus' and
--- possibly returns a delay in milliseconds. Iteration numbers start
--- at zero and increase by one on each retry. A *Nothing* return value from
--- the function implies we have reached the retry limit.
---
--- Please note that 'RetryPolicyM' is a 'Monoid'. You can collapse
--- multiple strategies into one using 'mappend' or '<>'. The semantics
--- of this combination are as follows:
---
--- 1. If either policy returns 'Nothing', the combined policy returns
--- 'Nothing'. This can be used to @inhibit@ after a number of retries,
--- for example.
---
--- 2. If both policies return a delay, the larger delay will be used.
--- This is quite natural when combining multiple policies to achieve a
--- certain effect.
---
--- Example:
---
--- One can easily define an exponential backoff policy with a limited
--- number of retries:
---
+-- | possibly returns a delay in milliseconds. Iteration numbers start
+-- | at zero and increase by one on each retry. A *Nothing* return value from
+-- | the function implies we have reached the retry limit.
+-- |
+-- | Please note that 'RetryPolicyM' is a 'Monoid'. You can collapse
+-- | multiple strategies into one using 'mappend' or '<>'. The semantics
+-- | of this combination are as follows:
+-- |
+-- | 1. If either policy returns 'Nothing', the combined policy returns
+-- | 'Nothing'. This can be used to @inhibit@ after a number of retries,
+-- | for example.
+-- |
+-- | 2. If both policies return a delay, the larger delay will be used.
+-- | This is quite natural when combining multiple policies to achieve a
+-- | certain effect.
+-- |
+-- | Example:
+-- |
+-- | One can easily define an exponential backoff policy with a limited
+-- | number of retries:
+-- |
 -- >> limitedBackoff = exponentialBackoff 50 <> limitRetries 5
---
--- Naturally, 'mempty' will retry immediately (delay 0) for an
--- unlimited number of retries, forming the identity for the 'Monoid'.
+-- |
+-- | Naturally, 'mempty' will retry immediately (delay 0) for an
+-- | unlimited number of retries, forming the identity for the 'Monoid'.
 
 newtype RetryPolicyM m
   = RetryPolicyM (RetryStatus -> m (Maybe Milliseconds))
@@ -104,10 +104,9 @@ limitRetries i = retryPolicy $ \(RetryStatus { iterNumber: n }) ->
   if n >= i then Nothing else Just zero
 
 -- | Add an upperbound to a policy such that once the given time-delay
--- amount *per try* has been reached or exceeded, the policy will stop
--- retrying and fail. If you need to stop retrying once *cumulative*
--- delay reaches a time-delay amount, use
--- 'limitRetriesByCumulativeDelay'
+-- | amount *per try* has been reached or exceeded, the policy will stop
+-- | retrying and fail. If you need to stop retrying once *cumulative*
+-- | delay reaches a time-delay amount, use 'limitRetriesByCumulativeDelay'
 limitRetriesByDelay
   :: ∀ d m . Monad m => Duration d => d -> RetryPolicyM m -> RetryPolicyM m
 limitRetriesByDelay d (RetryPolicyM policy) =
@@ -117,8 +116,8 @@ limitRetriesByDelay d (RetryPolicyM policy) =
                       else Just delay
 
 -- | Add an upperbound to a policy such that once the cumulative delay
--- over all retries has reached or exceeded the given limit, the
--- policy will stop retrying and fail.
+-- | over all retries has reached or exceeded the given limit, the
+-- | policy will stop retrying and fail.
 limitRetriesByCumulativeDelay
   :: ∀ d m . Monad m => Duration d => d -> RetryPolicyM m -> RetryPolicyM m
 limitRetriesByCumulativeDelay d (RetryPolicyM policy) =
@@ -134,18 +133,18 @@ constantDelay :: ∀ d . Duration d => d -> RetryPolicy
 constantDelay d = retryPolicy <<< const <<< pure <<< fromDuration $ d
 
 -- | Set a time-upperbound for any delays that may be directed by the
--- given policy.  This function does not terminate the retrying. The policy
--- `capDelay maxDelay (exponentialBackoff n)` will never stop retrying.  It
--- will reach a state where it retries forever with a delay of `maxDelay`
--- between each one. To get termination you need to use one of the
--- 'limitRetries' function variants.
+-- | given policy.  This function does not terminate the retrying. The policy
+-- | `capDelay maxDelay (exponentialBackoff n)` will never stop retrying.  It
+-- | will reach a state where it retries forever with a delay of `maxDelay`
+-- | between each one. To get termination you need to use one of the
+-- | 'limitRetries' function variants.
 capDelay
   :: ∀ d m . Monad m => Duration d => d -> RetryPolicyM m -> RetryPolicyM m
 capDelay limit (RetryPolicyM policy) =
   RetryPolicyM \status -> map (min (fromDuration limit)) <$> policy status
 
 -- | Grow delay exponentially each iteration.
--- Each delay will increase by a factor of two.
+-- | Each delay will increase by a factor of two.
 exponentialBackoff :: ∀ d . Duration d => d -> RetryPolicy
 exponentialBackoff base = retryPolicy \(RetryStatus { iterNumber: n }) ->
   Just $ Milliseconds $ unwrap (fromDuration base) * pow 2.0 (toNumber n)
@@ -159,9 +158,9 @@ fibonacciBackoff duration = retryPolicy \(RetryStatus { iterNumber: n }) ->
       fib m   { a, b } = fib (m - one) { a: b, b: a + b }
 
 -- | FullJitter exponential backoff as explained in AWS Architecture Blog article.
--- @http:\/\/www.awsarchitectureblog.com\/2015\/03\/backoff.html@
--- temp = min(cap, base * 2 ** attempt)
--- sleep = temp \/ 2 + random_between(0, temp \/ 2)
+-- | @http:\/\/www.awsarchitectureblog.com\/2015\/03\/backoff.html@
+-- | temp = min(cap, base * 2 ** attempt)
+-- | sleep = temp \/ 2 + random_between(0, temp \/ 2)
 fullJitterBackoff
   :: ∀ fx m d
    . MonadAff (random :: RANDOM | fx) m
@@ -175,7 +174,7 @@ fullJitterBackoff duration = RetryPolicyM \(RetryStatus { iterNumber: n }) -> do
   pure $ Just $ Milliseconds $ d + rand
 
 -- | Initial, default retry status. Exported mostly to allow user code
--- to test their handlers and retry policies. Use fields or lenses to update.
+-- | to test their handlers and retry policies. Use fields or lenses to update.
 defaultRetryStatus :: RetryStatus
 defaultRetryStatus = RetryStatus
   { iterNumber: zero
@@ -184,7 +183,7 @@ defaultRetryStatus = RetryStatus
   }
 
 -- | Apply policy on status to see what the decision would be.
--- 'Nothing' implies no retry, 'Just' returns updated status.
+-- | 'Nothing' implies no retry, 'Just' returns updated status.
 applyPolicy
   :: ∀ fx m . MonadAff fx m
   => RetryPolicyM m
@@ -201,7 +200,7 @@ applyPolicy (RetryPolicyM policy) retryStatus@(RetryStatus rs) = do
     Nothing -> pure Nothing
 
 -- | Apply policy and delay by its amount if it results in a retry.
--- Return updated status.
+-- | Returns updated status.
 applyAndDelay :: ∀ fx m . MonadAff fx m
   => RetryPolicyM m
   -> RetryStatus
@@ -216,8 +215,8 @@ applyAndDelay policy retryStatus = do
 
 
 -- | Retry combinator for actions that don't raise exceptions, but
--- signal in their type the outcome has failed. Examples are the
--- 'Maybe', 'Either' and 'EitherT' monads.
+-- | signal in their type the outcome has failed. Examples are the
+-- | 'Maybe', 'Either' and 'EitherT' monads.
 retrying :: ∀ fx m b . MonadAff fx m
   => RetryPolicyM m
   -> (RetryStatus -> b -> m Boolean) -- An action to check whether the result should be retried.
@@ -233,7 +232,7 @@ retrying policy check action = go defaultRetryStatus
       (pure res)
 
 -- | Run an action and recover from a raised exception by potentially
--- retrying the action a number of times.
+-- | retrying the action a number of times.
 recovering :: ∀ fx m a . MonadAff fx m
   => MonadError Error m
   => RetryPolicyM m
