@@ -1,4 +1,4 @@
-module Control.Monad.Aff.Retry
+module Effect.Aff.Retry
   ( RetryStatus(..)
   , RetryPolicyM(..)
   , RetryPolicy
@@ -8,7 +8,7 @@ module Control.Monad.Aff.Retry
   , retryPolicy
   , limitRetries
   , limitRetriesByDelay
-  , limitRetriesByCumulativeDelay
+  -- , limitRetriesByCumulativeDelay
   , retrying
   , recovering
   ) where
@@ -16,20 +16,19 @@ module Control.Monad.Aff.Retry
 import Prelude
 
 import Control.Bind (bindFlipped)
-import Control.Monad.Aff (delay, throwError, try)
-import Control.Monad.Aff.Class (class MonadAff, liftAff)
-import Control.Monad.Eff.Class (liftEff)
-import Control.Monad.Eff.Exception (Error)
-import Control.Monad.Eff.Random (RANDOM, randomRange)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Maybe.Trans (MaybeT(..), runMaybeT)
 import Data.Array (uncons)
 import Data.Either (either)
 import Data.Int (toNumber)
 import Data.Maybe (Maybe(Nothing, Just), maybe)
-import Data.Monoid (class Monoid)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Time.Duration (class Duration, Milliseconds(..), fromDuration)
+import Effect.Aff (delay, throwError, try)
+import Effect.Aff.Class (class MonadAff, liftAff)
+import Effect.Class (liftEffect)
+import Effect.Exception (Error)
+import Effect.Random (randomRange)
 import Math (pow)
 
 -- | Datatype with stats about retries made thus far
@@ -83,13 +82,13 @@ derive instance newtypeRetryStatus :: Newtype RetryStatus _
 newtype RetryPolicyM m
   = RetryPolicyM (RetryStatus -> m (Maybe Milliseconds))
 
-type RetryPolicy = ∀ f m . MonadAff f m => RetryPolicyM m
+type RetryPolicy = ∀ m . MonadAff m => RetryPolicyM m
 
 instance retryPolicySemigroup :: Monad m => Semigroup (RetryPolicyM m) where
   append (RetryPolicyM a) (RetryPolicyM b) =
     RetryPolicyM $ \n -> runMaybeT $ max <$> MaybeT (a n) <*> MaybeT (b n)
-
-instance retryPolicyMonoid :: MonadAff f m => Monoid (RetryPolicyM m) where
+  
+instance retryPolicyMonoid :: MonadAff m => Monoid (RetryPolicyM m) where
     mempty = retryPolicy $ const $ Just $ Milliseconds zero
 
 -- | Helper for making simplified policies that don't use the monadic context.
@@ -101,7 +100,7 @@ limitRetries
   :: Int -- Maximum number of retries.
   -> RetryPolicy
 limitRetries i = retryPolicy $ \(RetryStatus { iterNumber: n }) ->
-  if n >= i then Nothing else Just zero
+  if n >= i then Nothing else Just mempty
 
 -- | Add an upperbound to a policy such that once the given time-delay
 -- | amount *per try* has been reached or exceeded, the policy will stop
@@ -118,15 +117,15 @@ limitRetriesByDelay d (RetryPolicyM policy) =
 -- | Add an upperbound to a policy such that once the cumulative delay
 -- | over all retries has reached or exceeded the given limit, the
 -- | policy will stop retrying and fail.
-limitRetriesByCumulativeDelay
-  :: ∀ d m . Monad m => Duration d => d -> RetryPolicyM m -> RetryPolicyM m
-limitRetriesByCumulativeDelay d (RetryPolicyM policy) =
-  RetryPolicyM \status -> bindFlipped (limit status) <$> policy status
-  where
-    limit (RetryStatus rs) curDelay
-      | rs.cumulativeDelay + curDelay > cumulativeDelay = Nothing
-      | otherwise = Just curDelay
-    cumulativeDelay = fromDuration d
+-- limitRetriesByCumulativeDelay
+--   :: ∀ d m . Monad m => Duration d => d -> RetryPolicyM m -> RetryPolicyM m
+-- limitRetriesByCumulativeDelay d (RetryPolicyM policy) =
+--   RetryPolicyM \status -> bindFlipped (limit status) <$> policy status
+--   where
+--     limit (RetryStatus rs) curDelay
+--       | rs.cumulativeDelay + curDelay > cumulativeDelay = Nothing
+--       | otherwise = Just curDelay
+--     cumulativeDelay = fromDuration d
 
 -- | Cconstant delay with unlimited retries
 constantDelay :: ∀ d . Duration d => d -> RetryPolicy
@@ -163,14 +162,14 @@ fibonacciBackoff duration = retryPolicy \(RetryStatus { iterNumber: n }) ->
 -- | sleep = temp \/ 2 + random_between(0, temp \/ 2)
 fullJitterBackoff
   :: ∀ fx m d
-   . MonadAff (random :: RANDOM | fx) m
+   . MonadAff m
   => Duration d
   => d
   -> RetryPolicyM m
 fullJitterBackoff duration = RetryPolicyM \(RetryStatus { iterNumber: n }) -> do
   let (Milliseconds ms) = fromDuration duration
       d = (ms * pow 2.0 (toNumber n)) `div` 2.0
-  rand <- liftEff $ randomRange zero d
+  rand <- liftEffect $ randomRange zero d
   pure $ Just $ Milliseconds $ d + rand
 
 -- | Initial, default retry status. Exported mostly to allow user code
@@ -185,7 +184,7 @@ defaultRetryStatus = RetryStatus
 -- | Apply policy on status to see what the decision would be.
 -- | 'Nothing' implies no retry, 'Just' returns updated status.
 applyPolicy
-  :: ∀ fx m . MonadAff fx m
+  :: ∀ m . MonadAff m
   => RetryPolicyM m
   -> RetryStatus
   -> m (Maybe RetryStatus)
@@ -194,14 +193,14 @@ applyPolicy (RetryPolicyM policy) retryStatus@(RetryStatus rs) = do
   case res of
     Just delay -> pure $ Just $ RetryStatus
       { iterNumber: rs.iterNumber + one
-      , cumulativeDelay: rs.cumulativeDelay + delay -- boundedPlus?
+      , cumulativeDelay: rs.cumulativeDelay <> delay -- boundedPlus? no
       , previousDelay: Just delay
       }
     Nothing -> pure Nothing
 
 -- | Apply policy and delay by its amount if it results in a retry.
 -- | Returns updated status.
-applyAndDelay :: ∀ fx m . MonadAff fx m
+applyAndDelay :: ∀ m . MonadAff m
   => RetryPolicyM m
   -> RetryStatus
   -> m (Maybe RetryStatus)
@@ -217,7 +216,7 @@ applyAndDelay policy retryStatus = do
 -- | Retry combinator for actions that don't raise exceptions, but
 -- | signal in their type the outcome has failed. Examples are the
 -- | 'Maybe', 'Either' and 'EitherT' monads.
-retrying :: ∀ fx m b . MonadAff fx m
+retrying :: ∀ m b . MonadAff m
   => RetryPolicyM m
   -> (RetryStatus -> b -> m Boolean) -- An action to check whether the result should be retried.
                                      -- If True, we delay and retry the operation.
@@ -233,7 +232,7 @@ retrying policy check action = go defaultRetryStatus
 
 -- | Run an action and recover from a raised exception by potentially
 -- | retrying the action a number of times.
-recovering :: ∀ fx m a . MonadAff fx m
+recovering :: ∀ m a . MonadAff m
   => MonadError Error m
   => RetryPolicyM m
   -> Array (RetryStatus -> Error -> m Boolean)
