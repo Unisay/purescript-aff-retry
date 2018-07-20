@@ -12,15 +12,15 @@
     "url": "git://github.com/Unisay/purescript-aff-retry.git"
   },
   "dependencies": {
-    "purescript-aff": "^4.1.1",
-    "purescript-transformers": "^3.6.0",
-    "purescript-exceptions": "^3.1.0",
-    "purescript-random": "^3.0.0",
-    "purescript-datetime": "^3.4.1",
-    "purescript-prelude": "^3.2.0"
+    "purescript-aff": "^5.0.1",
+    "purescript-transformers": "^4.1.0",
+    "purescript-exceptions": "^4.0.0",
+    "purescript-random": "^4.0.0",
+    "purescript-datetime": "^4.0.0",
+    "purescript-prelude": "^4.1.0"
   },
   "devDependencies": {
-    "purescript-psci-support": "^3.0.0",
-    "purescript-test-unit": "^13.0.0"
+    "purescript-psci-support": "^4.0.0",
+    "purescript-test-unit": "^14.0.0"
   }
 }
