@@ -8,7 +8,7 @@ module Effect.Aff.Retry
   , retryPolicy
   , limitRetries
   , limitRetriesByDelay
-  -- , limitRetriesByCumulativeDelay
+  , limitRetriesByCumulativeDelay
   , retrying
   , recovering
   ) where
@@ -87,7 +87,7 @@ type RetryPolicy = ∀ m . MonadAff m => RetryPolicyM m
 instance retryPolicySemigroup :: Monad m => Semigroup (RetryPolicyM m) where
   append (RetryPolicyM a) (RetryPolicyM b) =
     RetryPolicyM $ \n -> runMaybeT $ max <$> MaybeT (a n) <*> MaybeT (b n)
-  
+
 instance retryPolicyMonoid :: MonadAff m => Monoid (RetryPolicyM m) where
     mempty = retryPolicy $ const $ Just $ Milliseconds zero
 
@@ -117,15 +117,15 @@ limitRetriesByDelay d (RetryPolicyM policy) =
 -- | Add an upperbound to a policy such that once the cumulative delay
 -- | over all retries has reached or exceeded the given limit, the
 -- | policy will stop retrying and fail.
--- limitRetriesByCumulativeDelay
---   :: ∀ d m . Monad m => Duration d => d -> RetryPolicyM m -> RetryPolicyM m
--- limitRetriesByCumulativeDelay d (RetryPolicyM policy) =
---   RetryPolicyM \status -> bindFlipped (limit status) <$> policy status
---   where
---     limit (RetryStatus rs) curDelay
---       | rs.cumulativeDelay + curDelay > cumulativeDelay = Nothing
---       | otherwise = Just curDelay
---     cumulativeDelay = fromDuration d
+limitRetriesByCumulativeDelay
+  :: ∀ d m . Monad m => Duration d => d -> RetryPolicyM m -> RetryPolicyM m
+limitRetriesByCumulativeDelay d (RetryPolicyM policy) =
+  RetryPolicyM \status -> bindFlipped (limit status) <$> policy status
+  where
+    limit (RetryStatus rs) curDelay
+      | (rs.cumulativeDelay <> curDelay) > cumulativeDelay = Nothing
+      | otherwise = Just curDelay
+    cumulativeDelay = fromDuration d
 
 -- | Cconstant delay with unlimited retries
 constantDelay :: ∀ d . Duration d => d -> RetryPolicy
@@ -161,7 +161,7 @@ fibonacciBackoff duration = retryPolicy \(RetryStatus { iterNumber: n }) ->
 -- | temp = min(cap, base * 2 ** attempt)
 -- | sleep = temp \/ 2 + random_between(0, temp \/ 2)
 fullJitterBackoff
-  :: ∀ fx m d
+  :: ∀ m d
    . MonadAff m
   => Duration d
   => d
