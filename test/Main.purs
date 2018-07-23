@@ -2,15 +2,19 @@ module Test.Main where
 
 import Prelude
 
+import Data.Array as A
 import Data.Either (isLeft)
+import Data.Foldable (sum)
 import Data.Maybe (Maybe(..), isNothing, maybe)
+import Data.Tuple (snd)
 import Effect (Effect)
 import Effect.Aff (Aff, Milliseconds(..), attempt, throwError)
 import Effect.Aff.AVar (AVar, new, put, take)
-import Effect.Aff.Retry (RetryPolicyM, RetryStatus(RetryStatus), applyPolicy, constantDelay, defaultRetryStatus, limitRetries, recovering, retryPolicy, retrying)
+import Effect.Aff.Retry (RetryPolicyM, RetryStatus(RetryStatus), applyPolicy, constantDelay, defaultRetryStatus, limitRetries, limitRetriesByCumulativeDelay, recovering, retryPolicy, retrying)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
 import Effect.Exception (error, Error)
+import Test.Retry (simulatePolicy)
 import Test.Unit (failure, suite, test)
 import Test.Unit.Assert (assert, equal, shouldEqual)
 import Test.Unit.Main (runTest)
@@ -90,3 +94,14 @@ main = runTest do
       result <- attempt $ recovering myRetryPolicy checks (recoveringAction actionRuns)
       assert "Failure expected" $ isLeft result
       take actionRuns >>= equal (one + expectedRetries)
+
+    test "cumulative delays don't exceed given limit" do
+      let baseDelay = Milliseconds 90.0
+          cumulativeDelayMax = Milliseconds 30.0
+          policy = limitRetriesByCumulativeDelay cumulativeDelayMax myRetryPolicy
+      results <- simulatePolicy 100 policy
+      let delays = A.catMaybes (snd <$> results)
+          actualCumulativeDelay =
+            Milliseconds $ sum ((\(Milliseconds ms) -> ms) <$> delays)
+      assert "Actual cumulative delay is less than max delay"
+        (actualCumulativeDelay <= cumulativeDelayMax)
