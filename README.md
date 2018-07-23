@@ -16,9 +16,10 @@ The main purpose of this package is to make it easy to work reliably with `Monad
 
 import Prelude
 
-import Control.Monad.Aff (Aff, Milliseconds(..))
-import Control.Monad.Aff.Console (CONSOLE, log)
-import Control.Monad.Aff.Retry ( RetryPolicyM
+import Effect.Aff (Aff, Milliseconds(..))
+import Effect.Console (log)
+import Effect.Class (liftEffect)
+import Effect.Aff.Retry ( RetryPolicyM
                                , constantDelay
                                , defaultRetryStatus
                                , limitRetries
@@ -26,16 +27,16 @@ import Control.Monad.Aff.Retry ( RetryPolicyM
                                )
 
 
-someAction :: ∀ x. Aff (console :: CONSOLE | x) Unit
-someAction = log "Potentially failing action"
+someAction :: Aff Unit
+someAction = liftEffect $ log "Potentially failing action"
 
-recoveredAction :: ∀ x. Aff (console :: CONSOLE | x) Unit
+recoveredAction :: Aff Unit
 recoveredAction = recovering myRetryPolicy checks someAction
   where
-    myRetryPolicy :: ∀ x. RetryPolicyM (Aff x)
+    myRetryPolicy :: RetryPolicyM Aff
     myRetryPolicy = constantDelay (Milliseconds 200.0) <> limitRetries 10
 
-    checks :: ∀ x. Array (RetryStatus -> Error -> Aff x Boolean)
+    checks :: Array (RetryStatus -> Error -> Aff Boolean)
     checks = [\(RetryStatus { iterNumber: n }) -> error -> pure true ]
 
 ```
