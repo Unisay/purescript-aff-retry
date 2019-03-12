@@ -4,6 +4,7 @@ module Effect.Aff.Retry
   , RetryPolicy
   , constantDelay
   , exponentialBackoff
+  , fibonacciBackoff
   , fullJitterBackoff
   , capDelay
   , defaultRetryStatus
