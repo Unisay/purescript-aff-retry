@@ -3,6 +3,10 @@ module Effect.Aff.Retry
   , RetryPolicyM(..)
   , RetryPolicy
   , constantDelay
+  , exponentialBackoff
+  , fibonacciBackoff
+  , fullJitterBackoff
+  , capDelay
   , defaultRetryStatus
   , applyPolicy
   , retryPolicy
