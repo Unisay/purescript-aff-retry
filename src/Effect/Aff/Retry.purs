@@ -8,6 +8,7 @@ module Effect.Aff.Retry
   , fullJitterBackoff
   , capDelay
   , defaultRetryStatus
+  , applyAndDelay
   , applyPolicy
   , retryPolicy
   , limitRetries
