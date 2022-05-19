@@ -158,7 +158,7 @@ fibonacciBackoff duration = retryPolicy \(RetryStatus { iterNumber: n }) ->
   Just $ Milliseconds $ fib ((toNumber n) + one) { a: zero, b: base }
     where
       (Milliseconds base) = fromDuration duration
-      fib 0.0 { a, b } = a
+      fib 0.0 { a } = a
       fib m   { a, b } = fib (m - one) { a: b, b: a + b }
 
 -- | FullJitter exponential backoff as explained in AWS Architecture Blog article.

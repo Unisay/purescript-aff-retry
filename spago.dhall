@@ -16,24 +16,18 @@ to generate this file without the comments in this block.
 , dependencies =
   [ "aff"
   , "arrays"
-  , "avar"
-  , "console"
   , "datetime"
   , "effect"
   , "either"
   , "exceptions"
-  , "foldable-traversable"
   , "integers"
   , "maybe"
   , "newtype"
   , "numbers"
   , "prelude"
-  , "psci-support"
   , "random"
-  , "test-unit"
   , "transformers"
-  , "tuples"
   ]
 , packages = ./packages.dhall
-, sources = [ "src/**/*.purs", "test/**/*.purs" ]
+, sources = [ "src/**/*.purs" ]
 }
