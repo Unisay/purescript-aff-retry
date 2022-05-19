@@ -96,8 +96,7 @@ main = runTest do
       take actionRuns >>= equal (one + expectedRetries)
 
     test "cumulative delays don't exceed given limit" do
-      let baseDelay = Milliseconds 90.0
-          cumulativeDelayMax = Milliseconds 30.0
+      let cumulativeDelayMax = Milliseconds 30.0
           policy = limitRetriesByCumulativeDelay cumulativeDelayMax myRetryPolicy
       results <- simulatePolicy 100 policy
       let delays = A.catMaybes (snd <$> results)

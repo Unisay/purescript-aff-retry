@@ -34,7 +34,7 @@ import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (Error)
 import Effect.Random (randomRange)
-import Math (pow)
+import Data.Number (pow)
 
 -- | Datatype with stats about retries made thus far
 newtype RetryStatus =
