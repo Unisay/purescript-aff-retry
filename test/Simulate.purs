@@ -9,22 +9,27 @@ import Data.Maybe (Maybe, fromMaybe)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Effect.Aff (Milliseconds(..))
-import Effect.Aff.Retry (RetryPolicyM(..), defaultRetryStatus, RetryStatus(..))
+import Effect.Aff.Retry (RetryPolicyM(..), RetryStatus(..), defaultRetryStatus)
 
 simulatePolicy
-  :: ∀ m
-   . Monad m
-  => Int
-  -> RetryPolicyM m
-  -> m (Array (Tuple Int (Maybe Milliseconds)))
-simulatePolicy n (RetryPolicyM f)
-  = flip evalStateT defaultRetryStatus $ for (A.range 0 n) $ \i -> do
-  (RetryStatus stat) <- get
-  delay <- lift (f (RetryStatus stat))
-  put (RetryStatus (stat
-    { iterNumber = i + 1
-    , cumulativeDelay = stat.cumulativeDelay  <>
-                        fromMaybe (Milliseconds zero) delay
-    , previousDelay = delay
-    }))
-  pure $ Tuple i delay
+  ∷ ∀ m
+  . Monad m
+  ⇒ Int
+  → RetryPolicyM m
+  → m (Array (Tuple Int (Maybe Milliseconds)))
+simulatePolicy n (RetryPolicyM f) = flip evalStateT defaultRetryStatus
+  $ for (A.range 0 n)
+  $ \i → do
+      (RetryStatus stat) ← get
+      delay ← lift (f (RetryStatus stat))
+      put
+        ( RetryStatus
+            ( stat
+                { iterNumber = i + 1
+                , cumulativeDelay = stat.cumulativeDelay <>
+                    fromMaybe (Milliseconds zero) delay
+                , previousDelay = delay
+                }
+            )
+        )
+      pure $ Tuple i delay
