@@ -35,6 +35,6 @@ recoveredAction = recovering myRetryPolicy checks someAction
     myRetryPolicy = constantDelay (Milliseconds 200.0) <> limitRetries 10
 
     checks :: Array (RetryStatus -> Error -> Aff Boolean)
-    checks = [\(RetryStatus { iterNumber: n }) -> error -> pure true ]
+    checks = [\(RetryStatus { iterNumber: n }) error -> pure true ]
 
 ```
